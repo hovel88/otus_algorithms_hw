@@ -19,25 +19,25 @@ public:
         uint32_t col = 0;
         pos_to_coords(pos, row, col);
 
+        // маски для основных диагоналей
+        static const uint64_t A1H8_DIAG = 0x8040201008040201ULL;
+        static const uint64_t A8H1_DIAG = 0x0102040810204080ULL;
+
         // Слон ходить по диагоналям
         // на не ограниченное количество клеток
 
-        // с текущей позиции на северо-восток (++row, ++col)
-        for (int r = row + 1, c = col + 1; r < 8 && c < 8; r++, c++) {
-            moves |= (uint64_t)1 << (r * 8 + c);
-        }
-        // с текущей позиции на северо-запад (++row, --col)
-        for (int r = row + 1, c = col - 1; r < 8 && c >= 0; r++, c--) {
-            moves |= (uint64_t)1 << (r * 8 + c);
-        }
-        // с текущей позиции на юго-восток (--row, ++col)
-        for (int r = row - 1, c = col + 1; r >= 0 && c < 8; r--, c++) {
-            moves |= (uint64_t)1 << (r * 8 + c);
-        }
-        // с текущей позиции на юго-запад (--row, --col)
-        for (int r = row - 1, c = col - 1; r >= 0 && c >= 0; r--, c--) {
-            moves |= (uint64_t)1 << (r * 8 + c);
-        }
+        // сдвигаем диагональ A1H8 так, чтобы её (0,0) совпал с нашей диагональю,
+        // сдвигаем диагональ A8H1 так, чтобы её (0,7) совпал с нашей диагональю,
+        // и убираем саму текущую позицию из маски
+        int a1h8_shift = (row - col) * 8;
+        int a8h1_shift = (row + col - 7) * 8;
+        moves  = (a1h8_shift >= 0)
+               ? (A1H8_DIAG << a1h8_shift)
+               : (A1H8_DIAG >> -a1h8_shift);
+        moves |= (a8h1_shift >= 0)
+               ? (A8H1_DIAG << a8h1_shift)
+               : (A8H1_DIAG >> -a8h1_shift);
+        moves &= ~((uint64_t)1 << pos);
 
         return moves;
     }
