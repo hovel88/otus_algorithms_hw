@@ -1,0 +1,18 @@
+Когда надо добавить большой файл в GitHub (он имеет ограничение на 100МБ).
+
+Нудно скачать и установить на машину Git LFS.
+https://git-lfs.github.com
+
+Выполнить команду
+git lfs install
+
+Добавить в репозиторий в корень файл .gitattributes
+
+Добавить большие файлы командой (она внесет изменения в файл .gitattributes)
+git lfs track "*.psd"
+
+Сначала запушить эли файлы в Git LFS командой
+git lfs push --all origin main
+
+Затем запушить саму ветку на GitHub
+git push -u origin main
