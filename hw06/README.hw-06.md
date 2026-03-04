@@ -1,4 +1,4 @@
-# ДЗ 05: Алгоритмы сортировки (BubbleSort, InsertionSort, ShellSort)
+# ДЗ 06: Алгоритмы сортировки (BubbleSort, InsertionSort, ShellSort)
 
 ## Цель
 
