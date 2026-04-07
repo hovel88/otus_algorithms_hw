@@ -17,7 +17,7 @@ Treap::Treap()
 
 std::string Treap::print_checks() const
 {
-    bool bst      = check_bst_();
+    bool bst      = check_bst_(root_);
     bool balanced = check_balance_(root_);
     bool heap     = check_heap_(root_);
     std::string str;
@@ -38,27 +38,61 @@ void Treap::print_(Node* node) const
     print_(node->right);
 }
 
-bool Treap::check_bst_() const
+bool Treap::check_bst_(Node* node) const
 {
-    auto get_inorder = [this]() -> std::vector<int> {
-        std::vector<int> result;
-        inorder_(root_, result);
-        return result;
-    };
+    Node* prev = nullptr;
+    return check_bst_rec_(node, prev);
+}
 
-    std::vector<int> inorder_list = get_inorder();
-    for (size_t i = 1; i < inorder_list.size(); i++) {
-        if (inorder_list[i] <= inorder_list[i-1]) return false;
-    }
-    return true;
+bool Treap::check_bst_rec_(Node* node, Node*& prev) const
+{
+    if (!node) return true;
+
+    // рекурсивно обходим дерево слева-направо и в глубину.
+    // просто проверяем значение на >= и сразу возвращаем булевый
+    // результат вместо формирования вектора и его дальнейшего
+    // анализа на упорядоченность. в результате можно на лету
+    // за один проход определить что свойство не выполняется
+    // и досрочно завершить рекурсию, т.о. сложность становится:
+    // O(1) по памяти и O(N) по времени.
+    // кроме того, если данные будут не простыми int, а сложными
+    // объектами, то добавляется необходимость определить операции
+    // сравнения этих объектов (достаточно операций < и ==, остальные
+    // можно вывести из них)
+
+    if (!check_bst_rec_(node->left, prev)) return false;
+    if (prev && prev->data >= node->data) return false;
+    prev = node;
+    return check_bst_rec_(node->right, prev);
 }
 
 bool Treap::check_balance_(Node* node) const
 {
-    if (!node) return true;
+    return check_balance_rec_(node).balanced;
+}
 
-    if (std::abs(balance_(node)) > 1) return false;
-    return check_balance_(node->left) && check_balance_(node->right);
+Treap::BR_t Treap::check_balance_rec_(Node* node) const
+{
+    if (!node) return {true, 0};
+
+    // рекурсивно обходим дерево слева-направо и в глубину.
+    // вместо того, чтобы рекурсивно обходить дерево и для каждого
+    // узла опять и опять рекурсивно высчитывать высоту (т.к. для BST
+    // высота не хранится в самом дереве) делая очень много обходов дерева,
+    // мы сразу на лету подсчитываем высоту и определяем сбалансированность
+    // поддерева, т.о. можем сразу вернуть результат и прервать рекурсию,
+    // т.е. выполняем за один обход дерева, сложность O(N)
+
+    auto left_res = check_balance_rec_(node->left);
+    if (!left_res.balanced) return {false, 0};
+
+    auto right_res = check_balance_rec_(node->right);
+    if (!right_res.balanced) return {false, 0};
+
+    int balance = left_res.height - right_res.height;
+    if (std::abs(balance) > 1) return {false, 0};
+
+    return {true, 1 + std::max(left_res.height, right_res.height)};
 }
 
 bool Treap::check_heap_(Node* node) const
@@ -98,11 +132,6 @@ int Treap::size_(Node* node) const
 int Treap::height_(Node* node) const
 {
     return node ? ( 1 + std::max(height_(node->left), height_(node->right)) ) : 0;
-}
-
-int Treap::balance_(Node* node) const
-{
-    return node ? ( height_(node->left) - height_(node->right) ) : 0;
 }
 
 Treap::Node* Treap::find_min_(Node* node) const

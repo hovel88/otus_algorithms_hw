@@ -40,19 +40,19 @@ public:
 
 private:
     void  print_(Node* node) const;
-    bool  check_bst_() const;
+    bool  check_bst_(Node* node) const;
+    bool  check_bst_rec_(Node* node, Node*& prev) const;
     bool  check_balance_(Node* node) const;
     void  clear_(Node* node);
-    void  inorder_(Node* node, std::vector<int>& result) const;
     int   size_(Node* node) const;      // возвращает количество элементов в дереве
     int   height_(Node* node) const;    // возвращает высоту дерева
-    int   balance_(Node* node) const;   // возвращает коэффициент баланса для узла
     Node* find_min_(Node* node) const;  // для поиска минимального значения в поддереве
     Node* insert_(Node* node, int x);   // рекурсивная вставка
     Node* remove_(Node* node, int x);   // удаление при нескольких случаях (нет потомков, один потомок, два потомка)
     Node* search_(Node* node, int x);   // рекурсивный поиск
 
     void  update_height_(Node* node);   // пересчитывает уровни дерева
+    int   balance_(Node* node) const;   // возвращает коэффициент баланса для узла
     Node* rebalance_(Node* node);       // перебалансирует дерево от узла
     Node* small_right_rot_(Node* node); // малый правый поворот
     Node* small_left_rot_(Node* node);  // малый левый поворот

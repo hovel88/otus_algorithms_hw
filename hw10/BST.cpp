@@ -10,7 +10,7 @@ BST::~BST()
 
 std::string BST::print_checks() const
 {
-    bool bst      = check_bst_();
+    bool bst      = check_bst_(root_);
     bool balanced = check_balance_(root_);
     std::string str;
     str.append("[BST: ").append(( bst ? "✓" : "✗" )).append("]");
@@ -29,27 +29,61 @@ void BST::print_(Node* node) const
     print_(node->right);
 }
 
-bool BST::check_bst_() const
+bool BST::check_bst_(Node* node) const
 {
-    auto get_inorder = [this]() -> std::vector<int> {
-        std::vector<int> result;
-        inorder_(root_, result);
-        return result;
-    };
+    Node* prev = nullptr;
+    return check_bst_rec_(node, prev);
+}
 
-    std::vector<int> inorder_list = get_inorder();
-    for (size_t i = 1; i < inorder_list.size(); i++) {
-        if (inorder_list[i] <= inorder_list[i-1]) return false;
-    }
-    return true;
+bool BST::check_bst_rec_(Node* node, Node*& prev) const
+{
+    if (!node) return true;
+
+    // рекурсивно обходим дерево слева-направо и в глубину.
+    // просто проверяем значение на >= и сразу возвращаем булевый
+    // результат вместо формирования вектора и его дальнейшего
+    // анализа на упорядоченность. в результате можно на лету
+    // за один проход определить что свойство не выполняется
+    // и досрочно завершить рекурсию, т.о. сложность становится:
+    // O(1) по памяти и O(N) по времени.
+    // кроме того, если данные будут не простыми int, а сложными
+    // объектами, то добавляется необходимость определить операции
+    // сравнения этих объектов (достаточно операций < и ==, остальные
+    // можно вывести из них)
+
+    if (!check_bst_rec_(node->left, prev)) return false;
+    if (prev && prev->data >= node->data) return false;
+    prev = node;
+    return check_bst_rec_(node->right, prev);
 }
 
 bool BST::check_balance_(Node* node) const
 {
-    if (!node) return true;
+    return check_balance_rec_(node).balanced;
+}
 
-    if (std::abs(balance_(node)) > 1) return false;
-    return check_balance_(node->left) && check_balance_(node->right);
+BST::BR_t BST::check_balance_rec_(Node* node) const
+{
+    if (!node) return {true, 0};
+
+    // рекурсивно обходим дерево слева-направо и в глубину.
+    // вместо того, чтобы рекурсивно обходить дерево и для каждого
+    // узла опять и опять рекурсивно высчитывать высоту (т.к. для BST
+    // высота не хранится в самом дереве) делая очень много обходов дерева,
+    // мы сразу на лету подсчитываем высоту и определяем сбалансированность
+    // поддерева, т.о. можем сразу вернуть результат и прервать рекурсию,
+    // т.е. выполняем за один обход дерева, сложность O(N)
+
+    auto left_res = check_balance_rec_(node->left);
+    if (!left_res.balanced) return {false, 0};
+
+    auto right_res = check_balance_rec_(node->right);
+    if (!right_res.balanced) return {false, 0};
+
+    int balance = left_res.height - right_res.height;
+    if (std::abs(balance) > 1) return {false, 0};
+
+    return {true, 1 + std::max(left_res.height, right_res.height)};
 }
 
 void BST::clear_(Node* node)
@@ -61,16 +95,6 @@ void BST::clear_(Node* node)
     delete node;
 }
 
-void BST::inorder_(Node* node, std::vector<int>& result) const
-{
-    // рекурсивно обходим дерево слева-направо и в глубину.
-    // возвращаем последовательность элементов
-    if (!node) return;
-    inorder_(node->left, result);
-    result.push_back(node->data);
-    inorder_(node->right, result);
-}
-
 int BST::size_(Node* node) const
 {
     return node ? ( 1 + size_(node->left) + size_(node->right) ) : 0;
@@ -79,11 +103,6 @@ int BST::size_(Node* node) const
 int BST::height_(Node* node) const
 {
     return node ? ( 1 + std::max(height_(node->left), height_(node->right)) ) : 0;
-}
-
-int BST::balance_(Node* node) const
-{
-    return node ? ( height_(node->left) - height_(node->right) ) : 0;
 }
 
 BST::Node* BST::find_min_(Node* node) const
@@ -125,48 +144,34 @@ BST::Node* BST::remove_(Node* node, int x)
         // x == node->data
         // нашли узел для удаления. и тут есть несколько случаев
 
-        if (!node->left || !node->right) {
-            // случай 1: нет потомков или есть только один потомок.
-            // можем безопасно удалять узел, но вернуть указатель на
-            // существующего одного потомка, чтобы потом приклеить
-            // поддерево к родителю (этого потомка может и не быть, не страшно)
-            Node* temp = node->left ? node->left : node->right;
-            if (!temp) {
-                // в данном случае нет ни левого, ни правого потомка. спокойно затираем узел
-                temp = node;
-                node = nullptr;
-            } else {
-                // в данном случае есть либо левый, либо правый потомок. используем его
-                *node = *temp;
-            }
-            delete temp;
-        } else {
-            // случай 2: есть два потомка.
-            // исходим из свойства, что в правом поддереве находятся
-            // всегда элементы больше текущего. поэтому если мы возьмем
-            // минимальный элемент в правом поддереве (удалив его из правого
-            // поддерева конечно же) и поставим его на место текущего элемента,
-            // то мы сохраним свойство как для правого, так и для левого
-            // поддерева
-            Node* min_right = find_min_(node->right);
-            node->data = min_right->data;
-            node->right = remove_(node->right, min_right->data);
-        }
-
-        // случай 1: нет потомков или только один потомок.
+        // случай 1: нет потомков или есть только один потомок.
         // можем безопасно удалять узел, но вернуть указатель на
         // существующего одного потомка, чтобы потом приклеить
-        // поддерево к родителю
-        // if (node->left == nullptr) {
-        //     Node* temp = node->right;
-        //     delete node;
-        //     return temp; // тут может быть и null, ничего страшного
-        // } else
-        // if (node->right == nullptr) {
-        //     Node* temp = node->left;
-        //     delete node;
-        //     return temp; // тут может быть и null, ничего страшного
-        // }
+        // поддерево к родителю (этого потомка может и не быть, не страшно)
+        if (!node->left) {
+            Node* temp = node->right;
+            delete node;
+            return temp;
+        }
+        if (!node->right) {
+            Node* temp = node->left;
+            delete node;
+            return temp;
+        }
+
+        // случай 2: есть два потомка.
+        // исходим из свойства, что в правом поддереве находятся
+        // всегда элементы больше текущего. поэтому если мы возьмем
+        // минимальный элемент в правом поддереве (удалив его из правого
+        // поддерева конечно же) и поставим его на место текущего элемента,
+        // то мы сохраним свойство как для правого, так и для левого
+        // поддерева
+        // кроме того, используем семантику перемещения, вместо копирования
+        // на случай, если data это сложный объект, чтобы свести к минимуму
+        // дорогостоящее копирование
+        Node* min_right = find_min_(node->right);
+        std::swap(node->data, min_right->data);
+        node->right = remove_(node->right, min_right->data);
     }
 
     return node;

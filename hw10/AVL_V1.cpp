@@ -10,7 +10,7 @@ AVL_V1::~AVL_V1()
 
 std::string AVL_V1::print_checks() const
 {
-    bool bst      = check_bst_();
+    bool bst      = check_bst_(root_);
     bool balanced = check_balance_(root_);
     std::string str;
     str.append("[BST: ").append(( bst ? "✓" : "✗" )).append("]");
@@ -29,19 +29,32 @@ void AVL_V1::print_(Node* node) const
     print_(node->right);
 }
 
-bool AVL_V1::check_bst_() const
+bool AVL_V1::check_bst_(Node* node) const
 {
-    auto get_inorder = [this]() -> std::vector<int> {
-        std::vector<int> result;
-        inorder_(root_, result);
-        return result;
-    };
+    Node* prev = nullptr;
+    return check_bst_rec_(node, prev);
+}
 
-    std::vector<int> inorder_list = get_inorder();
-    for (size_t i = 1; i < inorder_list.size(); i++) {
-        if (inorder_list[i] <= inorder_list[i-1]) return false;
-    }
-    return true;
+bool AVL_V1::check_bst_rec_(Node* node, Node*& prev) const
+{
+    if (!node) return true;
+
+    // рекурсивно обходим дерево слева-направо и в глубину.
+    // просто проверяем значение на >= и сразу возвращаем булевый
+    // результат вместо формирования вектора и его дальнейшего
+    // анализа на упорядоченность. в результате можно на лету
+    // за один проход определить что свойство не выполняется
+    // и досрочно завершить рекурсию, т.о. сложность становится:
+    // O(1) по памяти и O(N) по времени.
+    // кроме того, если данные будут не простыми int, а сложными
+    // объектами, то добавляется необходимость определить операции
+    // сравнения этих объектов (достаточно операций < и ==, остальные
+    // можно вывести из них)
+
+    if (!check_bst_rec_(node->left, prev)) return false;
+    if (prev && prev->data >= node->data) return false;
+    prev = node;
+    return check_bst_rec_(node->right, prev);
 }
 
 bool AVL_V1::check_balance_(Node* node) const
@@ -61,16 +74,6 @@ void AVL_V1::clear_(Node* node)
     delete node;
 }
 
-void AVL_V1::inorder_(Node* node, std::vector<int>& result) const
-{
-    // рекурсивно обходим дерево слева-направо и в глубину.
-    // возвращаем последовательность элементов
-    if (!node) return;
-    inorder_(node->left, result);
-    result.push_back(node->data);
-    inorder_(node->right, result);
-}
-
 int AVL_V1::size_(Node* node) const
 {
     return node ? ( 1 + size_(node->left) + size_(node->right) ) : 0;
@@ -79,11 +82,6 @@ int AVL_V1::size_(Node* node) const
 int AVL_V1::height_(Node* node) const
 {
     return node ? node->height : 0;
-}
-
-int AVL_V1::balance_(Node* node) const
-{
-    return node ? ( height_(node->left) - height_(node->right) ) : 0;
 }
 
 AVL_V1::Node* AVL_V1::find_min_(Node* node) const
@@ -126,33 +124,34 @@ AVL_V1::Node* AVL_V1::remove_(Node* node, int x)
         // x == node->data
         // нашли узел для удаления. и тут есть несколько случаев
 
-        if (!node->left || !node->right) {
-            // случай 1: нет потомков или есть только один потомок.
-            // можем безопасно удалять узел, но вернуть указатель на
-            // существующего одного потомка, чтобы потом приклеить
-            // поддерево к родителю (этого потомка может и не быть, не страшно)
-            Node* temp = node->left ? node->left : node->right;
-            if (!temp) {
-                // в данном случае нет ни левого, ни правого потомка. спокойно затираем узел
-                temp = node;
-                node = nullptr;
-            } else {
-                // в данном случае есть либо левый, либо правый потомок. используем его
-                *node = *temp;
-            }
-            delete temp;
-        } else {
-            // случай 2: есть два потомка.
-            // исходим из свойства, что в правом поддереве находятся
-            // всегда элементы больше текущего. поэтому если мы возьмем
-            // минимальный элемент в правом поддереве (удалив его из правого
-            // поддерева конечно же) и поставим его на место текущего элемента,
-            // то мы сохраним свойство как для правого, так и для левого
-            // поддерева
-            Node* min_right = find_min_(node->right);
-            node->data = min_right->data;
-            node->right = remove_(node->right, min_right->data);
+        // случай 1: нет потомков или есть только один потомок.
+        // можем безопасно удалять узел, но вернуть указатель на
+        // существующего одного потомка, чтобы потом приклеить
+        // поддерево к родителю (этого потомка может и не быть, не страшно)
+        if (!node->left) {
+            Node* temp = node->right;
+            delete node;
+            return temp;
         }
+        if (!node->right) {
+            Node* temp = node->left;
+            delete node;
+            return temp;
+        }
+
+        // случай 2: есть два потомка.
+        // исходим из свойства, что в правом поддереве находятся
+        // всегда элементы больше текущего. поэтому если мы возьмем
+        // минимальный элемент в правом поддереве (удалив его из правого
+        // поддерева конечно же) и поставим его на место текущего элемента,
+        // то мы сохраним свойство как для правого, так и для левого
+        // поддерева
+        // кроме того, используем семантику перемещения, вместо копирования
+        // на случай, если data это сложный объект, чтобы свести к минимуму
+        // дорогостоящее копирование
+        Node* min_right = find_min_(node->right);
+        std::swap(node->data, min_right->data);
+        node->right = remove_(node->right, min_right->data);
     }
 
     // для AVL, в отличие от BST, нужно дополнительно отбалансировать
@@ -179,6 +178,11 @@ void AVL_V1::update_height_(Node* node)
 {
     if (!node) return;
     node->height = 1 + std::max(height_(node->left), height_(node->right));
+}
+
+int AVL_V1::balance_(Node* node) const
+{
+    return node ? ( height_(node->left) - height_(node->right) ) : 0;
 }
 
 AVL_V1::Node* AVL_V1::rebalance_(Node* node)
