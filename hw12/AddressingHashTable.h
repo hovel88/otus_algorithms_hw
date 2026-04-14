@@ -282,52 +282,6 @@ private:
         }
     }
 
-    // особая версия вставки. без проверки load_factor (для использования в rehash)
-    void insert_no_rehash_(const K& key, const V& value) {
-        size_t hash = hasher_(key);
-        size_t N    = table_.size();
-
-        size_t insert_idx = N;
-        size_t collisions = 0;
-        bool   found_key  = false;
-
-        for (size_t attempt = 0; attempt < N; ++attempt) {
-            size_t idx = probe_(hash, attempt, N);
-            auto& slot = table_[idx];
-
-            if (slot.state == state_t::OCCUPIED) {
-                if (slot.key == key) {
-                    slot.value = value;
-                    return;
-                }
-                if (!found_key) {
-                    found_key = true;
-                    ++collisions;
-                }
-            } else
-            if (slot.state == state_t::EMPTY) {
-                insert_idx = idx;
-                break;
-            } else
-            if (slot.state == state_t::DELETED
-            &&  insert_idx == N) {
-                insert_idx = idx;
-            }
-        }
-
-        if (insert_idx == N) {
-            throw std::runtime_error("Hash table full during rehash");
-        }
-
-        collisions_ += collisions;
-
-        auto& slot = table_[insert_idx];
-        slot.key   = key;
-        slot.value = value;
-        slot.state = state_t::OCCUPIED;
-        ++elements_;
-    }
-
     size_t get_probe_capacity_(size_t req) const {
         if (req == 0) req = DEFAULT_CAPACITY;
 
