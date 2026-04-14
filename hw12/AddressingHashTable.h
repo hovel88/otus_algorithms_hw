@@ -22,7 +22,14 @@ private:
         SK      key;
         SV      value;
         state_t state{state_t::EMPTY}; // слоты хранят информацию о статусе
+
+        slot_t() = default;
+        slot_t(const K& k, const V& v, state_t s) : key(k), value(v), state(s) {}
+        slot_t(K&& k, V&& v, state_t s) : key(std::move(k)), value(std::move(v)), state(s) {}
     };
+
+    static constexpr size_t DEFAULT_CAPACITY = 16;
+    static constexpr double DEFAULT_LOAD_FACTOR = 0.7;
 
     // для структуры данных с прямым доступом по хэш-ключу - используем std::vector
     const hash_table_version_t ver_{hash_table_version_t::V1};
@@ -34,20 +41,21 @@ private:
 
 public:
     virtual ~AddressingHashTable() = default;
-    AddressingHashTable() = default;
+    AddressingHashTable() = delete;
     AddressingHashTable(const AddressingHashTable&) = delete;
     AddressingHashTable(AddressingHashTable&&) = delete;
     AddressingHashTable& operator=(const AddressingHashTable&) = delete;
     AddressingHashTable& operator=(AddressingHashTable&&) = delete;
 
-    explicit AddressingHashTable(hash_table_version_t ver = hash_table_version_t::V1, size_t cap = 16)
-    :   ver_(ver),
-        table_(cap)
+    explicit AddressingHashTable(hash_table_version_t ver = hash_table_version_t::V1, size_t cap = DEFAULT_CAPACITY)
+    :   ver_(ver), table_(get_probe_capacity_(cap))
     {
         if (cap == 0) throw std::invalid_argument("capacity must be > 0");
     }
 
     void insert(const K& key, const V& value) override {
+        if (table_.empty()) rehash_(DEFAULT_CAPACITY);
+
         size_t hash = hasher_(key);
         size_t N    = table_.size();
 
@@ -86,7 +94,10 @@ public:
             }
         }
         if (insert_idx == N) {
-            throw std::runtime_error("Hash table full");
+            // не нашли место - расширяем таблицу и пробуем снова
+            rehash_(table_.size() * 2);
+            insert(key, value);
+            return;
         }
 
         collisions_ += collisions;
@@ -98,34 +109,114 @@ public:
         ++elements_;
 
         // если средняя плотность/загруженность > 0.7 производим расширение таблицы
-        if (load_factor() > 0.7) {
+        if (load_factor() > DEFAULT_LOAD_FACTOR) {
+            rehash_(table_.size() * 2);
+        }
+    }
+
+    void insert(K&& key, V&& value) {
+        //
+        // ПРИМЕЧАНИЕ: версия с move-семантикой для эффективного rehash
+        //
+        if (table_.empty()) rehash_(DEFAULT_CAPACITY);
+
+        size_t hash = hasher_(key);
+        size_t N    = table_.size();
+
+        size_t insert_idx = N;
+        size_t collisions = 0;
+        bool   found_key  = false;
+        for (size_t attempt = 0; attempt < N; ++attempt) {
+            size_t idx = probe_(hash, attempt, N);
+            auto& slot = table_[idx];
+
+            if (slot.state == state_t::OCCUPIED) {
+                // если OCCUPIED, проверяем, совпадает ли ключ в таблице, и если да,
+                // то просто заменяем значение - это не будем считать за коллизию.
+                // но если ключ не совпал - коллизия
+                if (slot.key == key) {
+                    slot.value = std::move(value);
+                    return;
+                }
+                if (!found_key) {
+                    found_key = true; // буду считать только один раз коллизию
+                    ++collisions;
+                }
+            } else
+            if (slot.state == state_t::EMPTY) {
+                insert_idx = idx;
+                break;
+            } else
+            if (slot.state == state_t::DELETED
+            &&  insert_idx == N) {
+                // запоминаем первый DELETED, но продолжаем искать EMPTY.
+                // возможно это улучшит производительность: если мы переиспользуем
+                // память в DELETED слотах, тем самым потом потребуется меньше
+                // попыток при последующем поиске
+                insert_idx = idx;
+            }
+        }
+        if (insert_idx == N) {
+            // не нашли место - расширяем таблицу и пробуем снова
+            rehash_(table_.size() * 2);
+            insert(std::move(key), std::move(value));
+            return;
+        }
+
+        collisions_ += collisions;
+
+        auto& slot = table_[insert_idx];
+        slot.key   = std::move(key);
+        slot.value = std::move(value);
+        slot.state = state_t::OCCUPIED;
+        ++elements_;
+
+        // если средняя плотность/загруженность > 0.7 производим расширение таблицы
+        if (load_factor() > DEFAULT_LOAD_FACTOR) {
             rehash_(table_.size() * 2);
         }
     }
 
     std::optional<V> get(const K& key) const override {
-        auto result = find_key_(key);
-        if (result.has_value()) {
-            auto [idx, found] = result.value();
-            if (found) {
-                return table_[idx].value;
+        if (table_.empty()) return std::nullopt;
+
+        size_t hash = hasher_(key);
+        size_t N    = table_.size();
+
+        for (size_t attempt = 0; attempt < N; ++attempt) {
+            size_t idx = probe_(hash, attempt, N);
+            const auto& slot = table_[idx];
+
+            if (slot.state == state_t::EMPTY) {
+                return std::nullopt;
+            }
+            if (slot.state == state_t::OCCUPIED
+            &&  slot.key   == key) {
+                return slot.value;
             }
         }
         return std::nullopt;
     }
 
     bool remove(const K& key) override {
-        auto result = find_key_(key);
-        if (result.has_value()) {
-            auto [idx, found] = result.value();
-            if (found) {
-                // реализация "ленивого удаления", само удаление случится
-                // при операции рехэширования или полной очистки
-                table_[idx].state = state_t::DELETED;
+        if (table_.empty()) return false;
+
+        size_t hash = hasher_(key);
+        size_t N    = table_.size();
+
+        for (size_t attempt = 0; attempt < N; ++attempt) {
+            size_t idx = probe_(hash, attempt, N);
+            auto& slot = table_[idx];
+
+            if (slot.state == state_t::EMPTY) {
+                return false;
+            }
+            if (slot.state == state_t::OCCUPIED
+            &&  slot.key   == key) {
+                slot.state = state_t::DELETED;
                 --elements_;
                 return true;
             }
-            return false;
         }
         return false;
     }
@@ -133,8 +224,9 @@ public:
     size_t size() const override { return elements_; }
     bool empty() const override  { return elements_ == 0; }
     void clear() override {
-        // очищаем, но сохраняем ёмкость хэш-таблицы при этом
         auto cap = table_.capacity();
+        cap = get_probe_capacity_(cap);
+
         table_.clear();
         table_.resize(cap);
         elements_   = 0;
@@ -151,13 +243,12 @@ public:
 
     size_t collision_count() const override { return collisions_; }
     size_t rehashes_count() const override  { return rehashes_; }
-    double load_factor() const override     { return static_cast<double>(elements_) / table_.size(); } // некая плотность/заполненность таблицы
+    double load_factor() const override     { return table_.empty() ? 0.0 : static_cast<double>(elements_) / table_.size(); } // некая плотность/заполненность таблицы
 
     void debug_print() const override {
-        std::string out;
-        int i = 0;
-        for (const auto& slot : table_) {
-            std::cout << i++ << ": ";
+        for (size_t i = 0; i < table_.size(); ++i) {
+            std::cout << i << ": ";
+            const auto& slot = table_[i];
             if (slot.state == state_t::OCCUPIED) {
                 std::cout << "[K='"  << slot.key << "' V='" << slot.value << "']";
             } else
@@ -170,9 +261,10 @@ public:
 
 private:
     void rehash_(size_t cap) {
+        cap = get_probe_capacity_(cap);
+
         std::vector<slot_t<K, V>> old_table;
         old_table.swap(table_);
-        table_.clear();
         table_.resize(cap);
 
         elements_   = 0;
@@ -181,32 +273,79 @@ private:
 
         // перевставляем элементы из старой таблицы в новую,
         // чтобы пересчитать все хэш ключи.
-        // все DELETED слоты отбрасываем на этом этапе
+        // используем move-семантику для ускорения.
+        // все DELETED слоты отбрасываем на этом этапе.
         for (const auto& slot : old_table) {
             if (slot.state == state_t::OCCUPIED) {
-                insert(slot.key, slot.value);
+                insert(std::move(slot.key), std::move(slot.value));
             }
         }
     }
 
-    // ищем позицию для ключа и дополнительно вернем признак, найден ли
-    std::optional<std::pair<size_t, bool>> find_key_(const K& key) const {
+    // особая версия вставки. без проверки load_factor (для использования в rehash)
+    void insert_no_rehash_(const K& key, const V& value) {
         size_t hash = hasher_(key);
         size_t N    = table_.size();
+
+        size_t insert_idx = N;
+        size_t collisions = 0;
+        bool   found_key  = false;
+
         for (size_t attempt = 0; attempt < N; ++attempt) {
             size_t idx = probe_(hash, attempt, N);
-            const auto& slot = table_[idx];
+            auto& slot = table_[idx];
 
+            if (slot.state == state_t::OCCUPIED) {
+                if (slot.key == key) {
+                    slot.value = value;
+                    return;
+                }
+                if (!found_key) {
+                    found_key = true;
+                    ++collisions;
+                }
+            } else
             if (slot.state == state_t::EMPTY) {
-                return std::make_pair(idx, false); // не найден
+                insert_idx = idx;
+                break;
+            } else
+            if (slot.state == state_t::DELETED
+            &&  insert_idx == N) {
+                insert_idx = idx;
             }
-            if (slot.state == state_t::OCCUPIED
-            &&  slot.key == key) {
-                return std::make_pair(idx, true);  // найден
-            }
-            // DELETED пропускаем и продолжаем
         }
-        return std::nullopt;
+
+        if (insert_idx == N) {
+            throw std::runtime_error("Hash table full during rehash");
+        }
+
+        collisions_ += collisions;
+
+        auto& slot = table_[insert_idx];
+        slot.key   = key;
+        slot.value = value;
+        slot.state = state_t::OCCUPIED;
+        ++elements_;
+    }
+
+    size_t get_probe_capacity_(size_t req) const {
+        if (req == 0) req = DEFAULT_CAPACITY;
+
+        if (ver_ == hash_table_version_t::V2) {
+            // для квадратичного пробинга используем степень двойки.
+            // ближайшая степень двойки бОльшая или равная запрошенной ёмкости
+            req-- ;
+            req |= req >> 1 ;
+            req |= req >> 2 ;
+            req |= req >> 4 ;
+            req |= req >> 8 ;
+            req |= req >> 16 ;
+            req |= req >> 32 ;
+            req++ ;
+            return req;
+        }
+        // для линейного пробинга любой размер сгодится
+        return req;
     }
 
     size_t probe_(size_t hash, size_t attempt, size_t N) const {
@@ -225,10 +364,8 @@ private:
     }
 
     // квадратичный пробинг:
-    //      h(k, i) = (hash(k) + c1*i + c2*i^2) % N
+    //      h(k, i) = (hash(k) + (i + i^2)/2) % N
     size_t quadratic_probe_(size_t hash, size_t attempt, size_t N) const {
-        const int c1 = 1;
-        const int c2 = 1;
-        return (hash + (c1 * attempt) + (c2 * attempt * attempt)) % N;
+        return (hash + (attempt + attempt * attempt) / 2) % N;
     }
 };
