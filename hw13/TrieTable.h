@@ -2,17 +2,29 @@
 
 #include <string>
 #include <array>
+#include <cassert>
 
 #include "IHashTable.h"
 
 template<typename V>
 class TrieTable : public IHashTable<std::string, V>
 {
+    // XXX: можно добавить и такую штуку, чтобы заставить для корректной работы использовать беззнаковый вариант
+    // static_assert(std::is_unsigned<char>::value, "WARNING: char is signed on this platform. Use -funsigned-char compiler flag");
+
 private:
+    static constexpr size_t ALPHABET_SIZE = 128;
+    static size_t char_to_index_(char ch) {
+        unsigned char uc = static_cast<unsigned char>(ch);
+        assert(uc < ALPHABET_SIZE && "only ASCII characters (0-127) are supported!");
+        if (uc >= ALPHABET_SIZE) throw std::invalid_argument("TrieTable :: non-ASCII character in key");
+        return static_cast<size_t>(uc);
+    }
+
     struct TrieNode {
         bool is_end_of_word{false};
         V value;
-        std::array<TrieNode*, 128> children_{};
+        std::array<TrieNode*, ALPHABET_SIZE> children_{};
 
         ~TrieNode() {
             for (TrieNode* child : children_) {
@@ -50,7 +62,8 @@ public:
         TrieNode* curr = root_;
         // двигаясь посимвольно внутри слова - проходим по детям
         // префиксного дерева, пока не спустимся до конечного узла
-        for (const char idx : key) {
+        for (char ch : key) {
+            size_t idx = char_to_index_(ch);
             if (curr->children_[idx] == nullptr) {
                 curr->children_[idx] = new TrieNode();
             }
@@ -72,7 +85,8 @@ public:
         // двигаясь посимвольно внутри слова - проходим по детям
         // префиксного дерева.
         // ищем узел, помещенный как конец слова
-        for (const char idx : key) {
+        for (char ch : key) {
+            size_t idx = char_to_index_(ch);
             if (curr->children_[idx] == nullptr) return std::nullopt;
             curr = curr->children_[idx];
         }
@@ -121,19 +135,19 @@ private:
             return false;
         }
 
-        char idx = key[depth];
-        if (curr->children_[idx] == nullptr) return false;
+        size_t idx = char_to_index_(key[depth]);
+        TrieNode* child = curr->children_[idx];
+        if (child == nullptr) return false;
 
-        bool can_delete_child = remove_recursive(curr->children_[idx], key, depth + 1, removed);
+        bool can_delete_child = remove_recursive(child, key, depth + 1, removed);
         if (can_delete_child) {
-            delete curr->children_[idx];
+            delete child;
             curr->children_[idx] = nullptr;
             // возвращаем true, если текущий узел не является концом слова
             // и у него нет других детей. передаем в рекурсию выше и там
             // уже этот узел удалят
             return !curr->is_end_of_word && !curr->has_children();
         }
-
         return false;
     }
 };
