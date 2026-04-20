@@ -32,7 +32,7 @@ public:
     std::string print_checks() const override;
 
     bool empty() const override  { return root_ == nullptr; }
-    int  size() const override   { return size_(root_); }
+    int  size() const override   { return total_size_; }
     int  height() const override { return height_(root_); }
 
     void insert(int x) override;
@@ -46,7 +46,6 @@ private:
     bool  check_balance_(Node* node) const;
     BR_t  check_balance_rec_(Node* node) const;
     void  clear_(Node* node);
-    int   size_(Node* node) const;
     int   height_(Node* node) const;
     Node* find_min_(Node* node) const;
 
@@ -57,4 +56,5 @@ private:
 
 private:
     Node* root_{nullptr};
+    int   total_size_{0}; 
 };

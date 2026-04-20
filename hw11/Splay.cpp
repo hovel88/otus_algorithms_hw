@@ -23,6 +23,7 @@ void Splay::insert(int x)
 {
     if (!root_) {
         root_ = new Node(x);
+        ++total_size_;
         return;
     }
 
@@ -37,6 +38,7 @@ void Splay::insert(int x)
     // в корень дерева был перемещен последний посещенный узел, который
     // или больше или меньше значения 'x', но самый ближайший по величине к 'x'.
     Node* node = new Node(x);
+    ++total_size_;
     if (x < root_->data) {
         // левое поддерево корня перевешиваем слева от узла,
         // а справа от узла навешиваем бывший корень
@@ -78,9 +80,11 @@ void Splay::remove(int x)
     // дальше работаем с дочерними левым и правым поддеревьями
     Node* l_tree = node->left;
     Node* r_tree = node->right;
-    delete node;
     if (l_tree) l_tree->parent = nullptr;
     if (r_tree) r_tree->parent = nullptr;
+
+    --total_size_;
+    delete node;
 
     // может быть ситуация, что у нас есть только одно дочернее поддерево,
     // тогда его и оставим в качестве нового дерева
@@ -98,7 +102,7 @@ void Splay::remove(int x)
     // вытаскиваем его в корень дерева, а затем в качестве левой ветки
     // пристегиваем левое поддерево удаленного узла.
     // т.о. сохраняется свойство бинарного дерева
-    Node* min_right = find_min_(node->right);
+    Node* min_right = find_min_(r_tree);
     splay_(min_right);
     min_right->left = l_tree;
     l_tree->parent  = min_right;
@@ -187,11 +191,6 @@ void Splay::clear_(Node* node)
     clear_(node->left);
     clear_(node->right);
     delete node;
-}
-
-int Splay::size_(Node* node) const
-{
-    return node ? (1 + size_(node->left) + size_(node->right)) : 0;
 }
 
 int Splay::height_(Node* node) const
