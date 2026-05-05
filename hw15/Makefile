@@ -12,7 +12,7 @@ clean:
 	find . -name 'hw15_*' -exec rm -f {} \;
 
 hw15_graph_files = main.cpp
-hw15_graph_inc = graph.h
+hw15_graph_inc = graph.h queue.h stack.h
 
 hw15_graph: $(hw15_graph_files) $(hw15_graph_inc)
 	$(CXX) $(LDFLAGS) $(CXXFLAGS) -o $@ $(hw15_graph_files)
