@@ -40,6 +40,11 @@ public:
 private:
     const version_t ver_{V2};
 
+    static const uint8_t REPEATED_MARKER = 0x80; // маркер для повторяющихся данных
+    static const uint8_t LITERAL_MARKER  = 0x00; // маркер для литералов
+    static const size_t  MAX_REPEATED    = 127;  // максимальная длина повтора
+    static const size_t  MAX_LITERAL     = 127;  // максимальная длина литералов
+
     // упаковка (примитивная).
     // формат:
     // - и для повторяющихся и для неповторяющихся символов: [байт][счетчик]
@@ -99,85 +104,82 @@ private:
 
     // упаковка (улучшенная версия).
     // формат:
-    // - для повторяющихся последовательностей  : [специальный_маркер | байт][счетчик]
-    // - для неповторяющихся последовательностей: [специальный_маркер][длина][<литералы>]
+    // - для повторяющихся последовательностей  : [специальный_маркер | длина][байт]
+    // - для неповторяющихся последовательностей: [специальный_маркер | длина][<литералы>]
+    // под специальным маркером повторяющейся последовательности подразумевается
+    // в данном случае старший бит (0x80), соответственно неповторяющейся - 0x00 (бит сброшен).
+    // а длина - либо количество повторяющихся байт, либо длина неповторяющейся
+    // (литеральной) последовательности. в связи с этим, длина ограничена 127 байтами
     std::vector<uint8_t> _compress(const std::vector<uint8_t>& data) const
     {
         std::vector<uint8_t> output;
         if (data.empty()) return output;
 
         const size_t n = data.size();
-        const uint8_t REPEATED_MARKER = 0x80; // маркер для повторяющихся данных
-        const uint8_t LITERAL_MARKER  = 0x00; // маркер для литералов
-
         size_t i = 0;
         while (i < n) {
             // поиск повторяющейся последовательности в некотором окне входных данных.
             // если есть повторяющиеся участки больше чем пару байт, то их выгоднее
             // сжимать.
-            // придется хранить 2 байта <символ,число_повторений>, поэтому выгодно
-            // сжимать последовательность 3+ байта.
-            // а размер окна входных данных - не более 255, потому что uint8_t
+            // а размер окна входных данных - не более 127, потому что uint8_t и используем бит маркера
             size_t  rep_start = i;
             uint8_t rep_byte  = data[i];
             while ((i < n)
-            &&     ((i - rep_start) < 255)
+            &&     ((i - rep_start) < MAX_REPEATED)
             &&     (data[i] == rep_byte)) {
                 i++;
             }
             size_t rep_len = i - rep_start;
 
             if (rep_len >= 3) {
-                // последовательность длинная, выгоднее сжать повторяющиеся данные
-                output.push_back(REPEATED_MARKER | rep_byte);
-                output.push_back(static_cast<uint8_t>(rep_len));
+                // последовательность длинная (3+ байта), выгоднее сжать повторяющиеся данные
+                // [REPEATED_MARKER | rep_len][rep_byte]
+                output.push_back(REPEATED_MARKER | static_cast<uint8_t>(rep_len));
+                output.push_back(rep_byte);
             } else {
-                // это не повторения, или блок повторений не достаточно длинный,
-                // ищем блок неповторяющихся данных (длинный повтор, 3+ одинаковых байта)
+                // это не повторения, или блок повторений не достаточно длинный
                 size_t literal_start = rep_start;
                 i = rep_start;
                 while (i < n) {
-                    size_t next_rep_len = 1;
-                    while ((i + next_rep_len < n)
-                    &&     (next_rep_len < 255)
-                    &&     (data[i + next_rep_len] == data[i])) {
-                        // если движемся по неповторяющейся последовательности, то условие
-                        // равенства байт (data[i + next_rep_len] == data[i]) не выполняется
-                        //   "ABCXXXXDEF"
-                        // literal_start=0
-                        // i=0, next_rep_len=1 -> B != A -> (1 меньше 3) -> i++
-                        // i=1, next_rep_len=1 -> C != B -> (1 меньше 3) -> i++
-                        // i=2, next_rep_len=1 -> X != C -> (1 меньше 3) -> i++
-                        // i=3, next_rep_len=1 -> X == X
-                        //                     -> в цикле считаем повторы, их 4 подряд (next_rep_len=4)
-                        //                     -> (4 >= 3) -> break
-                        // итого, блок литералов
-                        //   literal_len = i - literal_start = 3 - 0 = 3  : "ABC"
-                        next_rep_len++;
+                    // проверяем, не начинается ли длинный повтор (3+ одинаковых байта).
+                    // если движемся по неповторяющейся последовательности, то условие
+                    // равенства байт (data[i + next_rep] == data[i]) не выполняется
+                    //   "ABCXXXXDEF"
+                    // literal_start=0
+                    // i=0, next_rep=1 -> B != A -> (1 меньше 3) -> i++
+                    // i=1, next_rep=1 -> C != B -> (1 меньше 3) -> i++
+                    // i=2, next_rep=1 -> X != C -> (1 меньше 3) -> i++
+                    // i=3, next_rep=1 -> X == X
+                    //                     -> в цикле считаем повторы, их 4 подряд (next_rep=4)
+                    //                     -> (4 >= 3) -> break
+                    // итого, блок литералов
+                    //   literal_len = i - literal_start = 3 - 0 = 3  : "ABC"
+                    if ((i + 2 < n)
+                    &&  (data[i] == data[i+1])
+                    &&  (data[i] == data[i+2])) {
+                        break;
                     }
-
-                    if (next_rep_len >= 3) break; // если нашли повтор 3 и более байт - останавливаемся
                     i++;
-                    if (i - literal_start >= 255) break;
+                    if (i - literal_start >= MAX_LITERAL) break;
                 }
                 size_t literal_len = i - literal_start;
 
-                // особенный случай получается, когда литерал может быть всего одним символом,
-                // чтобы для его кодирования него не пришлось выделять 3 байта.
-                // тогда закодируем по типу последовательности (аналогично наивному алгоритму).
-                // а в общем случае - для кодирования потребуется 4+ байт (2 служебных + 2+ данные)
-                if (literal_len == 1
-                &&  data[literal_start] != LITERAL_MARKER
-                &&  data[literal_start] != REPEATED_MARKER) {
-                    output.push_back(REPEATED_MARKER | data[literal_start]);
-                    output.push_back(1);
-                } else
+                size_t sz   = 0;
+                size_t from = 0;
                 if (literal_len > 0) {
-                    output.push_back(LITERAL_MARKER);
-                    output.push_back(static_cast<uint8_t>(literal_len));
-                    for (size_t j = 0; j < literal_len; j++) {
-                        output.push_back(data[literal_start + j]);
-                    }
+                    sz   = literal_len;
+                    from = literal_start;
+                } else {
+                    // обработка коротких повторов (до 2 байт) - просто копируем их как литералы
+                    i = rep_start + rep_len;
+                    sz   = rep_len;
+                    from = rep_start;
+                }
+
+                // [LITERAL_MARKER | sz][<литералы>]
+                output.push_back(LITERAL_MARKER | static_cast<uint8_t>(sz));
+                for (size_t j = 0; j < sz; j++) {
+                    output.push_back(data[from + j]);
                 }
             }
         }
@@ -187,40 +189,37 @@ private:
 
     // распаковка (улучшенная версия).
     // формат:
-    // - для повторяющихся последовательностей  : [специальный_маркер | байт][счетчик]
-    // - для неповторяющихся последовательностей: [специальный_маркер][длина][<литералы>]
+    // - для повторяющихся последовательностей  : [специальный_маркер | длина][байт]
+    // - для неповторяющихся последовательностей: [специальный_маркер | длина][<литералы>]
+    // под специальным маркером повторяющейся последовательности подразумевается
+    // в данном случае старший бит (0x80), соответственно неповторяющейся - 0x00 (бит сброшен).
+    // а длина - либо количество повторяющихся байт, либо длина неповторяющейся
+    // (литеральной) последовательности. в связи с этим, длина ограничена 127 байтами
     std::vector<uint8_t> _decompress(const std::vector<uint8_t>& data) const
     {
         std::vector<uint8_t> output;
 
         const size_t n = data.size();
-        const uint8_t REPEATED_MARKER = 0x80; // маркер для повторяющихся данных
-        const uint8_t LITERAL_MARKER  = 0x00; // маркер для литералов
-
         size_t i = 0;
         while (i < n) {
-            uint8_t marker = data[i++];
+            uint8_t header = data[i++];
 
-            if ((marker & REPEATED_MARKER) == REPEATED_MARKER) {
+            if (header & REPEATED_MARKER) {
                 // начало повторяющихся данных, восстанавливаем символ указанное количество раз
+                // [REPEATED_MARKER | rep_len][байт]
+                size_t rep_len = header & ~REPEATED_MARKER;
                 if (i >= n) break;
-                uint8_t rep_byte = marker & ~REPEATED_MARKER;
-                uint8_t rep_len  = data[i++];
-
+                uint8_t rep_byte = data[i++];
                 for (size_t j = 0; j < rep_len; j++) {
                     output.push_back(rep_byte);
                 }
-            } else
-            if (marker == LITERAL_MARKER) {
+            } else {
+                // [LITERAL_MARKER | rep_len][байт]
                 // начало блока литералов (неповторяющейся последовательности)
-                if (i >= n) break;
-                uint8_t literal_len = data[i++];
-
+                uint8_t literal_len = header & ~LITERAL_MARKER;
                 for (size_t j = 0; j < literal_len && i < n; j++) {
                     output.push_back(data[i++]);
                 }
-            } else {
-                output.push_back(marker);
             }
         }
 

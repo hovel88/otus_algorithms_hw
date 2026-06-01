@@ -70,7 +70,7 @@ struct BenchmarkResult {
     std::chrono::nanoseconds decompression_time{};
 };
 
-BenchmarkResult _benchmark_file(const std::string& input_file)
+BenchmarkResult _benchmark_file(const std::string& input_file, RLE::version_t ver = RLE::version_t::V2)
 {
     BenchmarkResult result;
     result.filename = std::filesystem::path(input_file).filename().string();
@@ -78,7 +78,7 @@ BenchmarkResult _benchmark_file(const std::string& input_file)
 
     try {
         auto original = _read_file(input_file);
-        RLE rle;
+        RLE rle(ver);
 
         auto start      = std::chrono::high_resolution_clock::now();
         auto compressed = rle.compress(original);
@@ -114,18 +114,18 @@ BenchmarkResult _benchmark_file(const std::string& input_file)
 
 void _print_benchmark_table(const std::vector<BenchmarkResult>& results)
 {
-    std::cout << "\n" << std::string(100, '=') << std::endl;
+    std::cout << "\n" << std::string(113, '=') << std::endl;
     std::cout << std::left
               << std::setw(25) << "File"
               << std::setw(10) << "Type"
               << std::setw(8)  << "Status"
-              << std::setw(15) << "Origin byte(s)"
-              << std::setw(15) << "Compr. byte(s)"
-              << std::setw(12) << "Ratio %"
-              << std::setw(20) << "Compr. time (ns)"
-              << std::setw(20) << "Decompr. time (ns)"
+              << std::right << std::setw(15) << "Origin bytes"
+              << std::right << std::setw(15) << "Compr. bytes"
+              << std::right << std::setw(10) << "Ratio %"
+              << std::right << std::setw(15) << "Compr. time"
+              << std::right << std::setw(15) << "Decompr. time"
               << std::endl;
-    std::cout << std::string(100, '-') << std::endl;
+    std::cout << std::string(113, '-') << std::endl;
 
     std::map<std::string, std::pair<double, int>> type_stats;
     for (const auto& r : results) {
@@ -135,18 +135,18 @@ void _print_benchmark_table(const std::vector<BenchmarkResult>& results)
                   << std::setw(8)  << (r.valid ? "OK" : "FAIL")
                   << std::right << std::setw(15) << r.original_size
                   << std::right << std::setw(15) << r.compressed_size
-                  << std::right << std::setw(12) << std::fixed << std::setprecision(2) << r.compression_ratio
-                  << std::right << std::setw(20) << r.compression_time.count()
-                  << std::right << std::setw(20) << r.decompression_time.count()
+                  << std::right << std::setw(10) << std::fixed << std::setprecision(2) << r.compression_ratio
+                  << std::right << std::setw(15) << std::string(std::to_string(r.compression_time.count()) + " ns")
+                  << std::right << std::setw(15) << std::string(std::to_string(r.decompression_time.count()) + " ns")
                   << std::endl;
         type_stats[r.type].first += r.compression_ratio;
         type_stats[r.type].second++;
     }
+    std::cout << std::string(113, '-') << std::endl;
 
     if (!type_stats.empty()) {
-        std::cout << std::string(100, '-') << std::endl;
         std::cout << "\nAverage compression ration:\n";
-        std::cout << std::string(50, '-') << std::endl;
+        std::cout << std::string(27, '-') << std::endl;
 
         std::vector<std::pair<std::string, double>> avg_list;
         for (const auto& [type, stats] : type_stats) {
@@ -158,7 +158,7 @@ void _print_benchmark_table(const std::vector<BenchmarkResult>& results)
                   [](const auto& a, const auto& b) { return a.second < b.second; });
 
         for (const auto& [type, avg] : avg_list) {
-            std::cout << std::left  << std::setw(15) << type << " : "
+            std::cout << std::left  << std::setw(15)        << type << " : "
                       << std::fixed << std::setprecision(2) << avg << "%";
             if (avg < 70) std::cout << " (+++)";
             else if (avg < 95) std::cout << " (++)";
@@ -170,12 +170,10 @@ void _print_benchmark_table(const std::vector<BenchmarkResult>& results)
 }
 
 
-void _compress_file(const std::string& input_file, const std::string& output_file)
+void _compress_file(const std::string& input_file, const std::string& output_file, RLE::version_t ver = RLE::version_t::V2)
 {
-    std::cout << "compressing: from '" << input_file << "' to '" << output_file << "'" << std::endl;
-
     try {
-        RLE rle;
+        RLE rle(ver);
         auto origin_data = _read_file(input_file);
         auto compressed  = rle.compress(origin_data);
         _write_file(output_file, compressed);
@@ -190,12 +188,10 @@ void _compress_file(const std::string& input_file, const std::string& output_fil
 }
 
 
-void _decompress_file(const std::string& input_file, const std::string& output_file)
+void _decompress_file(const std::string& input_file, const std::string& output_file, RLE::version_t ver = RLE::version_t::V2)
 {
-    std::cout << "decompressing: from '" << input_file << "' to '" << output_file << "'" << std::endl;
-
     try {
-        RLE rle;
+        RLE rle(ver);
         auto compressed   = _read_file(input_file);
         auto decompressed = rle.decompress(compressed);
         _write_file(output_file, decompressed);

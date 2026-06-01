@@ -70,6 +70,8 @@ void _print_usage(const char* program_name)
     ss << "\n  -o, --output <file>      Указать выходной файл (для -c или -d)";
     ss << "\n  -b, --bench <files>      Запустить бенчмарк на указанных файлах";
     ss << "\n  -r, --bench-dir <dir>    Бенчмарк для всех файлов в папке";
+    ss << "\n  --v1                     Использовать наивную версию алгоритма RLE";
+    ss << "\n  --v2                     Использовать улучшенную версию алгоритма RLE (по умолчанию)";
     ss << "\n  --demo                   Запустить демонстрацию работы алгоритма";
     ss << "\n  -h, --help               Показать эту справку\n";
 
@@ -91,6 +93,8 @@ int main(int argc, char* argv[])
         {"output",     required_argument, 0, 'o'},
         {"bench",      required_argument, 0, 'b'},
         {"bench-dir",  required_argument, 0, 'r'},
+        {"v1",         no_argument,       0, 1001},
+        {"v2",         no_argument,       0, 1002},
         {"demo",       no_argument,       0, 1000},
         {"help",       no_argument,       0, 'h'},
         {0, 0, 0, 0}
@@ -101,6 +105,7 @@ int main(int argc, char* argv[])
     std::string output_filepath;
     std::string benchmark_dir;
     std::vector<std::string> benchmark_files;
+    bool use_rle_v1 = false;
 
     int opt = 0;
     int opt_index = 0;
@@ -121,9 +126,15 @@ int main(int argc, char* argv[])
             case 'b':
                 benchmark_files.push_back(optarg);
                 break;
+            case 1001:
+                use_rle_v1 = true;
+                break;
+            case 1002:
+                use_rle_v1 = false;
+                break;
             case 1000:
                 {
-                    _run_demo(RLE(RLE::version_t::V1), "с использованием примитивного алгоритма RLE (для сравнения)");
+                    _run_demo(RLE(RLE::version_t::V1), "с использованием наивного алгоритма RLE (для сравнения)");
                     _run_demo(RLE(RLE::version_t::V2), "с использованием стандартного (улучшенного) алгоритма RLE");
                 }
                 return 0;
@@ -138,10 +149,19 @@ int main(int argc, char* argv[])
         benchmark_files.push_back(argv[i]);
     }
 
+    RLE::version_t ver = use_rle_v1 ? RLE::version_t::V1 : RLE::version_t::V2;
+
     // режим сжатия
     if (!compress_filepath.empty()) {
         std::string out_file = output_filepath.empty() ?
                                (compress_filepath + ".rle") : (output_filepath);
+
+        std::cout << "compressing: from '" << compress_filepath
+                  << "' to '" << out_file
+                  << "' using RLE version "
+                  << (ver == RLE::version_t::V1 ? "V1 (naive)"
+                                                : "V2 (common)")
+                  << std::endl;
         _compress_file(compress_filepath, out_file);
         return 0;
     }
@@ -160,6 +180,12 @@ int main(int argc, char* argv[])
             }
         }
 
+        std::cout << "decompressing: from '" << decompress_filepath
+                  << "' to '" << out_file
+                  << "' using RLE version "
+                  << (ver == RLE::version_t::V1 ? "V1 (naive)"
+                                                : "V2 (common)")
+                  << std::endl;
         _decompress_file(in_file, out_file);
         return 0;
     }
@@ -172,8 +198,12 @@ int main(int argc, char* argv[])
         for (const auto& file : benchmark_files) {
             if (std::filesystem::exists(file)
             &&  std::filesystem::is_regular_file(file)) {
-                std::cout << "file: " << file << std::endl;
-                results.push_back(_benchmark_file(file));
+                std::cout << "file: '" << file
+                          << "' using RLE version "
+                          << (ver == RLE::version_t::V1 ? "V1 (naive)"
+                                                        : "V2 (common)")
+                          << std::endl;
+                results.push_back(_benchmark_file(file, ver));
             } else {
                 std::cerr << "file '" << file << "' not found, skip" << std::endl;
             }
@@ -186,8 +216,13 @@ int main(int argc, char* argv[])
             for (const auto& entry : std::filesystem::recursive_directory_iterator(benchmark_dir)) {
                 if (entry.is_regular_file()) {
                     std::string filepath = entry.path().string();
-                    std::cout << "file: " << filepath << std::endl;
-                    results.push_back(_benchmark_file(filepath));
+
+                    std::cout << "file: '" << filepath
+                              << "' using RLE version "
+                              << (ver == RLE::version_t::V1 ? "V1 (naive)"
+                                                            : "V2 (common)")
+                              << std::endl;
+                    results.push_back(_benchmark_file(filepath, ver));
                 }
             }
         }

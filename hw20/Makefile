@@ -12,7 +12,7 @@ clean:
 	find . -name 'hw20_*' -exec rm -f {} \;
 
 hw20_rle_files = main.cpp
-hw20_rle_inc = RLE.h
+hw20_rle_inc = RLE.h common.h
 
 hw20_rle: $(hw20_rle_files) $(hw20_rle_inc)
 	$(CXX) $(LDFLAGS) $(CXXFLAGS) -o $@ $(hw20_rle_files)
