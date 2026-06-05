@@ -4,7 +4,7 @@
 
 
 int main() {
-    std::cout << "Программа для демонстрации алгоритма решения задачи 'Ёлочка программиста'\n\n";
+    std::cout << "Программа для демонстрации алгоритма решения задачи 'Большой остров'\n\n";
 
     std::string res;
     try {
@@ -13,10 +13,10 @@ int main() {
 
         int N = std::stoi(N_str);
         std::vector<std::string> data;          // строки вида
-        data.resize(N);                         // "   1"
-        for (int i = 0; i < N; i++) {           // "  2 3"
-            std::getline(std::cin, data[i]);    // " 4 5 6"
-        }                                       // "9 8 0 3"
+        data.resize(N);                         // "1 1 1 1"
+        for (int i = 0; i < N; i++) {           // "0 1 0 1"
+            std::getline(std::cin, data[i]);    // "0 0 0 0"
+        }                                       // "1 0 1 1"
 
         res = algo(N_str, data);
     } catch (const std::exception& e) {
