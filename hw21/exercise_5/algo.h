@@ -32,6 +32,7 @@ std::string algo(const std::string& N_str, const std::string& M_str, const std::
     int height   = M;
     int width    = N;
     int max_area = 0;
+
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             // последовательно применяем алгоритм к каждому элементу массива.
@@ -54,6 +55,10 @@ std::string algo(const std::string& N_str, const std::string& M_str, const std::
                     int h = 0;
                     {
                         for (int j = y; j >= 0; --j) {
+                            // нам нет смысла просматривать столбцы выше,
+                            // чем уже известное ограничение, т.к. такой
+                            // прямоугольник мы уже всё равно не построим
+                            if (h > limit_h) break;
                             if (grid[j][x + i] == 0)
                                 h++;
                             else
