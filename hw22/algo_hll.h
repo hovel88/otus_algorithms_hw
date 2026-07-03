@@ -77,6 +77,7 @@ public:
         // элементов было много
         uint64_t remaining = hash & ((1ULL << (64 - b_)) - 1);
         int rank = count_trailing_zeros(remaining) + 1;
+        if (rank > MAX_RANK) rank = MAX_RANK;
 
         // обновляем максимум соответствующего регистра (т.е. максимум из всех элементов,
         // которые в нем побывали, ранг)
@@ -101,7 +102,8 @@ public:
         // такие выбросы, поэтому оно лучше, чем арифметические среднее.
         // вычисляем сумму по регистрам 2^(-registers[i]), это наше среднее гармоническое
         for (uint8_t r : registers_) {
-            sum_inv += 1.0 / (1ULL << r);
+            int shift = (r > MAX_RANK) ? MAX_RANK : r;
+            sum_inv += 1.0 / (1ULL << shift);
             if (r == 0) zeros++;
         }
 
@@ -117,9 +119,9 @@ public:
             return m_ * std::log(static_cast<double>(m_) / zeros);
         }
         // с другой стороны, может потребоваться коррекция больших значений, если разрядности
-        // хеша начнет нехватать, это когда величина оценки близка к 2^32
-        if (E > (1ULL << 32) / 30.0) {
-            return -static_cast<double>(1ULL << 32) * std::log(1.0 - E / (1ULL << 32));
+        // хеша начнет нехватать, это когда величина оценки близка к 2^63 (безопасный порог)
+        if (E > (1ULL << MAX_RANK) / 30.0) {
+            return -static_cast<double>(1ULL << MAX_RANK) * std::log(1.0 - E / (1ULL << MAX_RANK));
         }
 
         return E;
@@ -131,6 +133,7 @@ private:
     double alpha_{0.0};
     std::vector<uint8_t> registers_{};
 
+    static const int MAX_RANK = 63; // максимальный безопасный ранг
     static int count_trailing_zeros(uint64_t x) {
         if (x == 0) return 64;
         return __builtin_ctzll(x); // GCC/Clang intrinsic - встроенная функция для подсчета нулей в числе
